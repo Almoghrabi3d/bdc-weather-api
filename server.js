@@ -1,3 +1,4 @@
+// server.js
 import express from 'express';
 import mongoose from 'mongoose';
 import rateLimit from 'express-rate-limit';
@@ -10,47 +11,42 @@ import RequestLog from './models/requestLog.js';
 
 dotenv.config();
 
-// Resolve __dirname for ES Modules
+// resolve __dirname with ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 
-// --- Basic config ---
 const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.API_KEY || 'change-this-to-strong-key';
 const MONGO_URI = process.env.MONGO_URI;
-const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'bdc_api';
 
-// Trust proxy if behind a reverse proxy (e.g. data center / nginx)
+// لو السيرفر خلف بروكسي
 app.set('trust proxy', true);
 
-// --- Middleware ---
+// middlewares عامّة
 app.use(express.json());
 app.use(cors({ origin: '*', allowedHeaders: ['Content-Type', 'x-api-key'] }));
 app.use(morgan('dev'));
 
-// Serve static dashboard
+// تقديم الملفات الثابتة (الواجهة)
 app.use(express.static(path.join(__dirname, 'public')));
 
-// --- DB Connect ---
+// اتصال بقاعدة البيانات
 if (!MONGO_URI) {
   console.error('❌ Missing MONGO_URI in .env');
   process.exit(1);
 }
+
 mongoose
-  .connect(MONGO_URI, { dbName: MONGO_DB_NAME })
+  .connect(MONGO_URI, { dbName: 'bdc_api' })
   .then(() => console.log('✅ MongoDB connected'))
   .catch((err) => {
     console.error('❌ MongoDB connection error:', err.message);
     process.exit(1);
   });
 
-// --- Helpers ---
-const getClientIp = (req) =>
-  (req.headers['x-forwarded-for']?.split(',')[0] || req.ip || '').toString();
-
-// API key protection for /api/* routes only (لا نحمي ملفات الواجهة)
+// حماية مسارات /api بالمفتاح
 app.use('/api', (req, res, next) => {
   const key = req.headers['x-api-key'];
   if (key !== API_KEY) {
@@ -59,21 +55,22 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-// Rate limit على مسارات /api فقط
+// rate limit على /api فقط
 const apiLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 دقيقة
-  max: 30,             // 30 طلب/دقيقة
+  windowMs: 60 * 1000,
+  max: 30,
   standardHeaders: true,
   legacyHeaders: false
 });
 app.use('/api', apiLimiter);
 
-// Log requests AFTER auth and BEFORE handlers (حتى لا نسجل طلبات مرفوضة كمقبولة)
+// تسجيل الطلبات بعد قبولها
 app.use('/api', async (req, res, next) => {
-  const start = Date.now();
-  const ip = getClientIp(req);
+  const ip =
+    (req.headers['x-forwarded-for']?.split(',')[0] ||
+      req.ip ||
+      '').toString();
 
-  // Hook into response finish to record status
   res.on('finish', async () => {
     try {
       await RequestLog.create({
@@ -92,9 +89,9 @@ app.use('/api', async (req, res, next) => {
   next();
 });
 
-// ------------------- API ROUTES ------------------- //
+// ---------------- API ROUTES ---------------- //
 
-// Health check
+// health
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -103,10 +100,7 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Weather endpoint (يعتمد على Node 18+ حيث fetch مدمج)
-// أمثلة استخدام:
-// /api/weather?lat=31.9566&lon=35.9457
-// مصدر البيانات: open-meteo.com (بدون مفتاح)
+// weather (مثال)
 app.get('/api/weather', async (req, res, next) => {
   try {
     const lat = Number(req.query.lat);
@@ -130,30 +124,88 @@ app.get('/api/weather', async (req, res, next) => {
   }
 });
 
-// Logs list (آخر 100)
+// ✅ logs مع فلترة وفرز وترقيم
 app.get('/api/logs', async (req, res, next) => {
   try {
-    const limit = Math.min(Number(req.query.limit) || 100, 500);
-    const logs = await RequestLog.find().sort({ timestamp: -1 }).limit(limit).lean();
-    res.json(logs);
+    // pagination
+    const page = Math.max(parseInt(req.query.page || '1', 10), 1);
+    const limit = Math.min(
+      Math.max(parseInt(req.query.limit || '20', 10), 1),
+      100
+    );
+    const skip = (page - 1) * limit;
+
+    // sorting
+    const sortBy = req.query.sortBy || 'timestamp'; // timestamp | status | method
+    const sortDir =
+      (req.query.sortDir || 'desc').toLowerCase() === 'asc' ? 1 : -1;
+    const sort = { [sortBy]: sortDir };
+
+    // filters
+    const q = {};
+
+    // method=GET
+    if (req.query.method) {
+      q.method = req.query.method;
+    }
+
+    // statusClass=2xx|4xx|5xx
+    if (req.query.statusClass) {
+      const c = req.query.statusClass;
+      if (c === '2xx') q.status = { $gte: 200, $lt: 300 };
+      else if (c === '4xx') q.status = { $gte: 400, $lt: 500 };
+      else if (c === '5xx') q.status = { $gte: 500, $lt: 600 };
+    }
+
+    // endpointContains
+    if (req.query.endpointContains) {
+      q.endpoint = { $regex: req.query.endpointContains, $options: 'i' };
+    }
+
+    // date range
+    const from = req.query.from ? new Date(req.query.from) : null;
+    const to = req.query.to ? new Date(req.query.to) : null;
+    if (from || to) {
+      q.timestamp = {};
+      if (from && !isNaN(from)) q.timestamp.$gte = from;
+      if (to && !isNaN(to)) q.timestamp.$lte = to;
+    }
+
+    const [items, total] = await Promise.all([
+      RequestLog.find(q).sort(sort).skip(skip).limit(limit).lean(),
+      RequestLog.countDocuments(q)
+    ]);
+
+    const totalPages = Math.max(Math.ceil(total / limit), 1);
+
+    res.json({
+      items,
+      page,
+      limit,
+      total,
+      totalPages,
+      hasPrev: page > 1,
+      hasNext: page < totalPages,
+      sortBy,
+      sortDir: sortDir === 1 ? 'asc' : 'desc'
+    });
   } catch (err) {
     next(err);
   }
 });
 
-// ------------------- ERROR HANDLING ------------------- //
+// not found داخل /api
 app.use('/api', (req, res) => {
   res.status(404).json({ error: 'Not Found' });
 });
 
-// Global error handler
+// global error
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   console.error('❌', err);
   res.status(500).json({ error: 'Internal Server Error' });
 });
 
-// ------------------- START ------------------- //
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
 });

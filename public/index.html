@@ -1,3 +1,4 @@
+<!-- public/index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -40,7 +41,10 @@
       <input id="apiKey" type="password" placeholder="x-api-key" />
       <select id="method">
         <option value="">Any method</option>
-        <option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option>
+        <option>GET</option>
+        <option>POST</option>
+        <option>PUT</option>
+        <option>DELETE</option>
       </select>
       <select id="status">
         <option value="">Any status</option>
@@ -48,6 +52,21 @@
         <option value="4xx">4xx</option>
         <option value="5xx">5xx</option>
       </select>
+      <input id="endpointContains" type="text" placeholder="endpoint contains" />
+
+      <input id="page" type="number" min="1" value="1" style="max-width:80px" />
+      <input id="limit" type="number" min="1" max="100" value="20" style="max-width:90px" />
+
+      <select id="sortBy">
+        <option value="timestamp">timestamp</option>
+        <option value="status">status</option>
+        <option value="method">method</option>
+      </select>
+      <select id="sortDir">
+        <option value="desc">desc</option>
+        <option value="asc">asc</option>
+      </select>
+
       <button id="refresh">Refresh</button>
     </div>
 
