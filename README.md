@@ -1,30 +1,21 @@
-# BDC Weather API (Mini-API #1)
+# BDC Mini API
 
-واجهة برمجية بسيطة ضمن مشروع **Blockchain Data Center (BDC)** لتجربة بناء APIs سريعة بالتوازي مع تعلم Node.js/Express، تمهيدًا لدمجها لاحقًا مع شبكات الـ Testnet.
+Mini API for Blockchain Data Center:
+- MongoDB logging of requests
+- API key protection via `x-api-key`
+- Rate limit on `/api/*`
+- Simple HTML dashboard to view logs
+- Health & Weather endpoints
 
-## 🎯 الهدف
-- إنشاء API يعيد بيانات طقس **(مبدئيًا بيانات تجريبية Stub)**.
-- تجهيز هيكل مشروع احترافي (Express + CORS + Dotenv).
-- إضافة نقاط نهاية (health, weather) قابلة للتوسعة لاحقًا.
-- تمهيد لدمج MongoDB لتسجيل الطلبات و API Keys و Rate Limit.
+## Requirements
+- Node.js >= 18
+- MongoDB Atlas (or local)
+- Create `.env` from `.env.example`
 
----
-
-## 🧰 المتطلبات
-- Node.js 18+
-- npm
-- (اختياري لاحقًا) MongoDB Atlas Free Tier
-
----
-
-## 🚀 التشغيل محليًا
-
-### 1) تثبيت الحزم
+## Quick Start
 ```bash
 npm install
-
-## 🔐 API Protection & Logging
-- تمت إضافة MongoDB لتخزين سجل الطلبات.
-- تم تفعيل مفتاح حماية عبر Header: x-api-key.
-- تم إضافة Rate Limiter لمنع الطلبات الزائدة.
-
+cp .env.example .env
+# edit .env (MONGO_URI + API_KEY)
+npm run dev
+# open http://localhost:3000
