@@ -21,18 +21,14 @@ const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.API_KEY || 'change-this-to-strong-key';
 const MONGO_URI = process.env.MONGO_URI;
 
-// لو السيرفر خلف بروكسي
 app.set('trust proxy', true);
 
-// middlewares عامّة
 app.use(express.json());
 app.use(cors({ origin: '*', allowedHeaders: ['Content-Type', 'x-api-key'] }));
 app.use(morgan('dev'));
 
-// تقديم الملفات الثابتة (الواجهة)
 app.use(express.static(path.join(__dirname, 'public')));
 
-// اتصال بقاعدة البيانات
 if (!MONGO_URI) {
   console.error('❌ Missing MONGO_URI in .env');
   process.exit(1);
@@ -55,7 +51,7 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-// rate limit على /api فقط
+// rate limit
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 30,
@@ -64,7 +60,7 @@ const apiLimiter = rateLimit({
 });
 app.use('/api', apiLimiter);
 
-// تسجيل الطلبات بعد قبولها
+// تسجيل الطلبات المقبولة
 app.use('/api', async (req, res, next) => {
   const ip =
     (req.headers['x-forwarded-for']?.split(',')[0] ||
@@ -100,7 +96,7 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// weather (مثال)
+// weather example
 app.get('/api/weather', async (req, res, next) => {
   try {
     const lat = Number(req.query.lat);
@@ -124,10 +120,9 @@ app.get('/api/weather', async (req, res, next) => {
   }
 });
 
-// ✅ logs مع فلترة وفرز وترقيم
+// logs مع فلترة وفرز وترقيم
 app.get('/api/logs', async (req, res, next) => {
   try {
-    // pagination
     const page = Math.max(parseInt(req.query.page || '1', 10), 1);
     const limit = Math.min(
       Math.max(parseInt(req.query.limit || '20', 10), 1),
@@ -135,21 +130,17 @@ app.get('/api/logs', async (req, res, next) => {
     );
     const skip = (page - 1) * limit;
 
-    // sorting
-    const sortBy = req.query.sortBy || 'timestamp'; // timestamp | status | method
+    const sortBy = req.query.sortBy || 'timestamp';
     const sortDir =
       (req.query.sortDir || 'desc').toLowerCase() === 'asc' ? 1 : -1;
     const sort = { [sortBy]: sortDir };
 
-    // filters
     const q = {};
 
-    // method=GET
     if (req.query.method) {
       q.method = req.query.method;
     }
 
-    // statusClass=2xx|4xx|5xx
     if (req.query.statusClass) {
       const c = req.query.statusClass;
       if (c === '2xx') q.status = { $gte: 200, $lt: 300 };
@@ -157,12 +148,10 @@ app.get('/api/logs', async (req, res, next) => {
       else if (c === '5xx') q.status = { $gte: 500, $lt: 600 };
     }
 
-    // endpointContains
     if (req.query.endpointContains) {
       q.endpoint = { $regex: req.query.endpointContains, $options: 'i' };
     }
 
-    // date range
     const from = req.query.from ? new Date(req.query.from) : null;
     const to = req.query.to ? new Date(req.query.to) : null;
     if (from || to) {
@@ -192,6 +181,16 @@ app.get('/api/logs', async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// ✅ مسار تجريبي يولّد سجلات
+app.post('/api/debug/seed', async (req, res) => {
+  await RequestLog.create([
+    { endpoint: '/api/health', method: 'GET', ip: '127.0.0.1', status: 200, userAgent: 'seed/1.0' },
+    { endpoint: '/api/weather', method: 'GET', ip: '127.0.0.1', status: 502, userAgent: 'seed/1.0' },
+    { endpoint: '/api/logs', method: 'GET', ip: '127.0.0.1', status: 200, userAgent: 'seed/1.0' }
+  ]);
+  res.json({ ok: true, inserted: 3 });
 });
 
 // not found داخل /api
